@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support WebApp</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .line-option { margin-bottom: 15px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h1>Submit a Complaint</h1>
+    <div id="loading">Loading permissions...</div>
+
+    <div id="access-denied" class="hidden">Access Denied or Missing Permissions. Please use the bot start command.</div>
+
+    <form id="complaintForm" class="hidden">
+
+        <h2>Select Support Line</h2>
+        <div id="lineOptions">
+            <!-- Dynamic radio buttons will go here -->
+        </div>
+
+        <h2>Details</h2>
+        <label for="subject">Subject:</label><br>
+        <input type="text" id="subject" name="subject" required><br><br>
+
+        <label for="description">Description:</label><br>
+        <textarea id="description" name="description" rows="5" required></textarea><br><br>
+
+        <button type="submit" id="submitButton">Submit Report</button>
+    </form>
+
+    <script>
+        const form = document.getElementById('complaintForm');
+        const lineOptionsDiv = document.getElementById('lineOptions');
+        const loadingDiv = document.getElementById('loading');
+        const deniedDiv = document.getElementById('access-denied');
+        const submitButton = document.getElementById('submitButton');
+
+        let urlParams;
+        let userId;
+        let project;
+        let allowedLines;
+
+        function getQueryParams() {
+            const params = new URLSearchParams(window.location.search);
+            userId = params.get('user_id');
+            project = params.get('project');
+            const linesString = params.get('lines');
+            allowedLines = linesString ? linesString.split(',') : [];
+        }
+
+        function renderForm() {
+            loadingDiv.classList.add('hidden');
+
+            if (!userId || allowedLines.length === 0) {
+                deniedDiv.classList.remove('hidden');
+                return;
+            }
+
+            allowedLines.forEach(line => {
+                const div = document.createElement('div');
+                div.className = 'line-option';
+                div.innerHTML = `
+                    <input type="radio" id="${line}" name="line" value="${line}" required>
+                    <label for="${line}">${line.toUpperCase()}</label>
+                `;
+                lineOptionsDiv.appendChild(div);
+            });
+
+            form.classList.remove('hidden');
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            submitButton.disabled = true;
+            submitButton.textContent = 'Sending...';
+
+            const formData = new FormData(form);
+            const selectedLine = formData.get('line');
+
+            const payload = {
+                user_id: parseInt(userId),
+                project: project,
+                line: selectedLine,
+                form: {
+                    subject: formData.get('subject'),
+                    description: formData.get('description')
+                }
+            };
+
+            try {
+                const response = await fetch('/api/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    Telegram.WebApp.showAlert('Complaint submitted successfully!');
+                    Telegram.WebApp.close();
+                } else {
+                    const errorData = await response.json();
+                    Telegram.WebApp.showAlert('Submission failed: ' + (errorData.error || response.statusText));
+                }
+            } catch (error) {
+                Telegram.WebApp.showAlert('Network error: ' + error.message);
+            } finally {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Submit Report';
+            }
+        });
+
+        getQueryParams();
+        renderForm();
+    </script>
+</body>
+</html>
