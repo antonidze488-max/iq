@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Submit Report</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 20px;
+            background: var(--tg-theme-bg-color, #fff);
+            color: var(--tg-theme-text-color, #000);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: var(--tg-theme-button-color, #0088cc);
+            color: var(--tg-theme-button-text-color, #fff);
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Submit Report</h2>
+    <form id="reportForm">
+        <div class="form-group">
+            <label for="line">Line:</label>
+            <select id="line" required></select>
+        </div>
+        <div class="form-group">
+            <label for="phone">Phone:</label>
+            <input type="tel" id="phone" required>
+        </div>
+        <div class="form-group">
+            <label for="time">Time:</label>
+            <input type="time" id="time" required>
+        </div>
+        <div class="form-group">
+            <label for="comment">Comment:</label>
+            <textarea id="comment" required></textarea>
+        </div>
+        <button type="submit">Submit</button>
+        <div id="error" class="error"></div>
+    </form>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const userId = urlParams.get('user_id');
+        const lines = urlParams.get('lines').split(',');
+        const groupIds = urlParams.get('group_ids').split(',');
+        const token = urlParams.get('token');
+
+        const lineSelect = document.getElementById('line');
+        lines.forEach((line, index) => {
+            const option = document.createElement('option');
+            option.value = line;
+            option.dataset.groupId = groupIds[index];
+            option.textContent = line.toUpperCase();
+            lineSelect.appendChild(option);
+        });
+
+        document.getElementById('reportForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const selectedOption = lineSelect.options[lineSelect.selectedIndex];
+            const formData = {
+                user_id: userId,
+                line: lineSelect.value,
+                phone: document.getElementById('phone').value,
+                time: document.getElementById('time').value,
+                comment: document.getElementById('comment').value,
+                group_id: selectedOption.dataset.groupId
+            };
+
+            try {
+                const response = await fetch('/api/send', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                if (response.ok) {
+                    tg.showAlert('Report submitted successfully!');
+                    tg.close();
+                } else {
+                    const error = await response.json();
+                    document.getElementById('error').textContent = error.error || 'Failed to submit';
+                }
+            } catch (err) {
+                document.getElementById('error').textContent = 'Network error';
+            }
+        });
+    </script>
+</body>
+</html>

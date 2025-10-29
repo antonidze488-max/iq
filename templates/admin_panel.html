@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <div id="accessDenied" style="display:none;">
+        <h2>Access Denied</h2>
+        <p>Invalid authentication token.</p>
+    </div>
+
+    <div id="adminContent" style="display:none;">
+        <h2>Admin Panel</h2>
+
+        <div class="section">
+            <h3>Users Management</h3>
+            <div id="usersList"></div>
+
+            <h4>Add/Edit User</h4>
+            <form id="userForm">
+                <input type="text" id="editUserId" placeholder="User ID" required>
+                <input type="text" id="editLines" placeholder="Lines (comma-separated: did, ph)" required>
+                <input type="text" id="editProjects" placeholder="Projects (comma-separated: project1)" required>
+                <button type="submit">Save User</button>
+            </form>
+        </div>
+
+        <div class="section">
+            <h3>Admins Management</h3>
+            <div id="adminsList"></div>
+
+            <h4>Add Admin</h4>
+            <form id="adminForm">
+                <input type="text" id="newAdminId" placeholder="User ID" required>
+                <button type="submit">Add Admin</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const authToken = urlParams.get('token');
+
+        if (!authToken) {
+            document.getElementById('accessDenied').style.display = 'block';
+            throw new Error('No auth token');
+        }
+
+        let usersData = null;
+
+        async function apiCall(endpoint, options = {}) {
+            options.headers = options.headers || {};
+            options.headers['Authorization'] = authToken;
+
+            const response = await fetch(endpoint, options);
+
+            if (response.status === 401 || response.status === 403) {
+                document.getElementById('adminContent').style.display = 'none';
+                document.getElementById('accessDenied').style.display = 'block';
+                throw new Error('Access denied');
+            }
+
+            return response;
+        }
+
+        async function loadUsers() {
+            try {
+                const response = await apiCall('/api/users');
+                usersData = await response.json();
+                document.getElementById('adminContent').style.display = 'block';
+                renderUsers();
+                renderAdmins();
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function renderUsers() {
+            const container = document.getElementById('usersList');
+            container.innerHTML = '';
+
+            for (const [userId, userData] of Object.entries(usersData.users)) {
+                const userDiv = document.createElement('div');
+                userDiv.className = 'user-item';
+                userDiv.innerHTML = `
+                    <div>
+                        <strong>ID:</strong> ${userId}<br>
+                        <strong>Lines:</strong> ${userData.allowed_lines.join(', ')}<br>
+                        <strong>Projects:</strong> ${userData.projects.join(', ')}
+                    </div>
+                    <div>
+                        <button onclick="editUser('${userId}')">Edit</button>
+                        <button onclick="deleteUser('${userId}')">Delete</button>
+                    </div>
+                `;
+                container.appendChild(userDiv);
+            }
+        }
+
+        function renderAdmins() {
+            const container = document.getElementById('adminsList');
+            container.innerHTML = '';
+
+            usersData.admins.forEach(adminId => {
+                const adminDiv = document.createElement('div');
+                adminDiv.className = 'admin-item';
+                adminDiv.innerHTML = `
+                    <span>Admin ID: ${adminId}</span>
+                    <button onclick="removeAdmin('${adminId}')">Remove</button>
+                `;
+                container.appendChild(adminDiv);
+            });
+        }
+
+        window.editUser = function(userId) {
+            const userData = usersData.users[userId];
+            document.getElementById('editUserId').value = userId;
+            document.getElementById('editLines').value = userData.allowed_lines.join(', ');
+            document.getElementById('editProjects').value = userData.projects.join(', ');
+        };
+
+        window.deleteUser = async function(userId) {
+            if (!confirm('Delete this user?')) return;
+
+            try {
+                const response = await apiCall(`/api/users/${userId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    await loadUsers();
+                } else {
+                    const error = await response.json();
+                    alert(error.error);
+                }
+            } catch (err) {
+                alert('Failed to delete user');
+            }
+        };
+
+        window.removeAdmin = async function(adminId) {
+            if (!confirm('Remove this admin?')) return;
+
+            try {
+                const response = await apiCall(`/api/admins/${adminId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    await loadUsers();
+                } else {
+                    const error = await response.json();
+                    alert(error.error);
+                }
+            } catch (err) {
+                alert('Failed to remove admin');
+            }
+        };
+
+        document.getElementById('userForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const userId = document.getElementById('editUserId').value;
+            const lines = document.getElementById('editLines').value.split(',').map(s => s.trim());
+            const projects = document.getElementById('editProjects').value.split(',').map(s => s.trim());
+
+            try {
+                const response = await apiCall(`/api/users/${userId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        allowed_lines: lines,
+                        projects: projects
+                    })
+                });
+
+                if (response.ok) {
+                    document.getElementById('userForm').reset();
+                    await loadUsers();
+                } else {
+                    alert('Failed to save user');
+                }
+            } catch (err) {
+                alert('Network error');
+            }
+        });
+
+        document.getElementById('adminForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const newAdminId = document.getElementById('newAdminId').value;
+
+            try {
+                const response = await apiCall('/api/admins', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ admin_id: newAdminId })
+                });
+
+                if (response.ok) {
+                    document.getElementById('adminForm').reset();
+                    await loadUsers();
+                } else {
+                    alert('Failed to add admin');
+                }
+            } catch (err) {
+                alert('Network error');
+            }
+        });
+
+        loadUsers();
+    </script>
+</body>
+</html>
